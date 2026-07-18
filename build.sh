@@ -1,6 +1,6 @@
 #!/bin/sh
 # netmodem2irc — full project build
-# Usage: ./build.sh [tests|server|config|dos|all]
+# Usage: ./build.sh [tests|server|config|fossil|all]
 #        FPCIRC=/path/to/fpc264irc ./build.sh
 set -e
 cd "$(dirname "$0")"
@@ -38,8 +38,8 @@ build_config() {
     fi
 }
 
-build_dos() {
-    echo "=== DOS netfossl.exe ==="
+build_fossil() {
+    echo "=== FOSSIL (netfossl.exe) ==="
     cd dos && sh build.sh && cd ..
 }
 
@@ -47,9 +47,9 @@ case "$TARGET" in
     tests)  run_tests ;;
     server) build_server ;;
     config) build_config ;;
-    dos)    build_dos ;;
-    all)    run_tests; echo; build_server; echo; build_config; echo; build_dos ;;
-    *)      echo "Usage: $0 [tests|server|config|dos|all]"; exit 1 ;;
+    fossil) build_fossil ;;
+    all)    run_tests; echo; build_server; echo; build_config; echo; build_fossil ;;
+    *)      echo "Usage: $0 [tests|server|config|fossil|all]"; exit 1 ;;
 esac
 
 echo

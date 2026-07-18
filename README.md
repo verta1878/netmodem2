@@ -163,13 +163,21 @@ work © the NetModem revival contributors, also under GPLv2.
 
 netmodem2irc is configured with a plain text file, one node per line:
 
-    node 3 bbs.example.com 23
-    node 4 chat.example.org 6667
+    node 3 comport 3 baud 38400 mode fossil
+    node 4 comport 4 baud 57600 mode fossil
 
-`NM_Config` parses and validates it (node index 0–99, port 1–65535, host
-non-empty; bad lines rejected). Text is the canonical config format — it avoids the
-registry access-flag/ACL complexity of newer Windows and works identically from
-NT4 onward. A Lazarus config utility (config/, rebuilt from Dedrick's original
-NETMODEM.CPL) provides a GUI; a Control Panel (.cpl) applet is planned (see
-docs/netmodem2irc_cpl_config_design.md). Registry mirroring may be added later,
-once the text path is fully tested.
+Each line defines a node's COM port, baud rate, and emulation mode. Shorthand
+(defaults baud=38400, mode=fossil):
+
+    node 3 comport 3
+
+Connection targets are NOT in the config — they come from AT dial commands
+at runtime (`ATDT bbs.example.com:23`), just like a real modem.
+
+`NM_Config` parses and validates it (node index 0–99, comport 1–99, baud in
+9600/19200/38400/57600/115200, mode fossil|uart; bad lines rejected). Text is
+the canonical config format — it avoids the registry access-flag/ACL complexity
+of newer Windows and works identically from NT4 onward. A Lazarus config utility
+(config/, rebuilt from Dedrick's original NETMODEM.CPL) provides a GUI; a Control
+Panel (.cpl) applet is planned (see docs/netmodem2irc_cpl_config_design.md).
+Registry mirroring may be added later, once the text path is fully tested.

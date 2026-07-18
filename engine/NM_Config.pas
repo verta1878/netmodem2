@@ -1,22 +1,25 @@
 unit NM_Config;
 { ===========================================================================
-  netmodem2irc — configuration (per-node comport/host/port)
+  netmodem2irc — configuration (per-node NetModem settings)
   ---------------------------------------------------------------------------
-  Turns netmodem2irc from "constructed in code" into "configured and deployable."
-  A config is a list of node entries; each says: which comport/node index, and
-  the server host+port that node's link connects to.
+  Configures how each node behaves: COM port assignment, baud rate, emulation
+  mode (FOSSIL or UART), and whether the node is enabled.
 
-  Format (simple, BBS-era INI-like, one node per line):
-      node <index> <host> <port>
+  The connection target (host/port) is NOT in config — that comes from AT dial
+  commands (ATDT host:port) at runtime, just like a real modem.
+
+  Format (plain text, one setting per line):
+      node <index> comport <n> baud <rate> mode <fossil|uart>
   e.g.
-      node 3 bbs.example.com 23
-      node 4 chat.example.org 6667
-  Lines that are blank or start with ';' or '#' are comments.
+      node 3 comport 3 baud 38400 mode fossil
+      node 4 comport 4 baud 57600 mode fossil
+  Shorthand (just comport, defaults baud=38400 mode=fossil):
+      node 3 comport 3
+  Lines starting with ';' or '#' are comments.
 
   DESIGN: parsing/validation is plain Pascal, host-testable. Every field is
-  RANGE-CHECKED on load (structural-sight discipline: a config value is untrusted
-  input crossing a boundary, same as a wire value — index 0..NM_MAX_NODES-1,
-  port 1..65535, host non-empty). Bad lines are reported, not silently accepted.
+  RANGE-CHECKED on load (index 0..NM_MAX_NODES-1, comport 1..99, baud in
+  valid set, mode fossil|uart). Bad lines are reported, not silently accepted.
   =========================================================================== }
 
 {$MODE OBJFPC}{$H+}
@@ -24,47 +27,45 @@ unit NM_Config;
 interface
 
 uses
-  SysUtils, NM_Node;   { for NM_MAX_NODES }
+  SysUtils, NM_Node;
 
 type
-  { one configured node }
+  TNMMode = (nmFossil, nmUart);
+
   TNodeConfig = record
-    NodeIndex : Integer;    // comport/node, 0 .. NM_MAX_NODES-1
-    Host      : string;     // server host to connect to
-    Port      : Word;       // server port, 1..65535
+    NodeIndex : Integer;       // node slot, 0 .. NM_MAX_NODES-1
+    ComPort   : Integer;       // virtual COM port, 1..99
+    Baud      : LongInt;       // baud rate: 9600/19200/38400/57600/115200
+    Mode      : TNMMode;       // FOSSIL or plain UART emulation
+    Enabled   : Boolean;       // node active
   end;
 
-  { the whole configuration: a set of node entries }
   TNMConfig = class
   private
     FNodes : array of TNodeConfig;
-    FErrors: array of string;   { human-readable problems found during parse }
-    function FindNode(AIndex: Integer): Integer;   { -1 if absent }
+    FErrors: array of string;
+    function FindNode(AIndex: Integer): Integer;
   public
     constructor Create;
-
-    { Parse one config line. Returns True if it added/updated a node, False if the
-      line was a comment/blank (not an error) or invalid (an error is recorded).
-      Kept public so it's unit-testable line by line. }
     function ParseLine(const ALine: string): Boolean;
-
-    { Parse a whole config text (newline-separated). Returns the number of node
-      entries successfully loaded. Errors accumulate in Errors. }
     function ParseText(const AText: string): Integer;
-
-    { Look up a node's config by index; returns True and fills ACfg if present. }
     function GetNode(AIndex: Integer; out ACfg: TNodeConfig): Boolean;
-
     function NodeCount: Integer;
     function NodeByPosition(APos: Integer; out ACfg: TNodeConfig): Boolean;
     function ErrorCount: Integer;
     function ErrorText(APos: Integer): string;
-
-    { True if the whole config parsed with no errors. }
     function IsValid: Boolean;
   end;
 
+function ValidBaud(B: LongInt): Boolean;
+
 implementation
+
+function ValidBaud(B: LongInt): Boolean;
+begin
+  Result := (B = 9600) or (B = 19200) or (B = 38400) or
+            (B = 57600) or (B = 115200);
+end;
 
 constructor TNMConfig.Create;
 begin
@@ -87,10 +88,12 @@ end;
 
 function TNMConfig.ParseLine(const ALine: string): Boolean;
 var
-  s, keyword, host: string;
+  s: string;
   parts: array of string;
-  p, idx, prt: Integer;
-  code: Integer;
+  p, idx, com, code: Integer;
+  baud: LongInt;
+  mode: TNMMode;
+  hasBaud, hasMode: Boolean;
 
   procedure PushErr(const Msg: string);
   begin
@@ -98,7 +101,6 @@ var
     FErrors[High(FErrors)] := Msg;
   end;
 
-  { split on whitespace runs }
   procedure Split(const line: string);
   var i: Integer; cur: string;
   begin
@@ -128,33 +130,27 @@ var
 begin
   Result := False;
   s := Trim(ALine);
-  { comment or blank -> not an error, just nothing to add }
   if (s = '') or (s[1] = ';') or (s[1] = '#') then Exit;
 
   Split(s);
   if Length(parts) = 0 then Exit;
 
-  keyword := LowerCase(parts[0]);
-  if keyword <> 'node' then
+  if LowerCase(parts[0]) <> 'node' then
   begin
     PushErr('unknown keyword: ' + parts[0]);
     Exit;
   end;
 
-  if Length(parts) <> 4 then
+  { minimum: node <index> comport <n> }
+  if Length(parts) < 4 then
   begin
-    PushErr('expected: node <index> <host> <port>  (got ' +
-            IntToStr(Length(parts)) + ' fields): ' + s);
+    PushErr('expected: node <index> comport <n> [baud <rate>] [mode <fossil|uart>]: ' + s);
     Exit;
   end;
 
-  { field 1: node index — RANGE-CHECKED 0..NM_MAX_NODES-1 }
+  { node index }
   Val(parts[1], idx, code);
-  if code <> 0 then
-  begin
-    PushErr('node index not a number: ' + parts[1]);
-    Exit;
-  end;
+  if code <> 0 then begin PushErr('node index not a number: ' + parts[1]); Exit; end;
   if (idx < 0) or (idx >= NM_MAX_NODES) then
   begin
     PushErr('node index ' + IntToStr(idx) + ' out of range (0..' +
@@ -162,29 +158,57 @@ begin
     Exit;
   end;
 
-  { field 2: host — must be non-empty }
-  host := parts[2];
-  if host = '' then
+  { comport keyword + value }
+  if LowerCase(parts[2]) <> 'comport' then
   begin
-    PushErr('empty host for node ' + IntToStr(idx));
+    PushErr('expected "comport" after node index: ' + s);
+    Exit;
+  end;
+  Val(parts[3], com, code);
+  if code <> 0 then begin PushErr('comport not a number: ' + parts[3]); Exit; end;
+  if (com < 1) or (com > 99) then
+  begin
+    PushErr('comport ' + IntToStr(com) + ' out of range (1..99)');
     Exit;
   end;
 
-  { field 3: port — RANGE-CHECKED 1..65535 }
-  Val(parts[3], prt, code);
-  if code <> 0 then
+  { defaults }
+  baud := 38400;
+  mode := nmFossil;
+  hasBaud := False;
+  hasMode := False;
+
+  { optional: baud <rate> mode <fossil|uart> in any order }
+  p := 4;
+  while p <= High(parts) do
   begin
-    PushErr('port not a number: ' + parts[3]);
-    Exit;
-  end;
-  if (prt < 1) or (prt > 65535) then
-  begin
-    PushErr('port ' + IntToStr(prt) + ' out of range (1..65535) for node ' +
-            IntToStr(idx));
-    Exit;
+    if (LowerCase(parts[p]) = 'baud') and (p + 1 <= High(parts)) then
+    begin
+      Val(parts[p+1], baud, code);
+      if (code <> 0) or (not ValidBaud(baud)) then
+      begin
+        PushErr('invalid baud rate: ' + parts[p+1] + ' (valid: 9600/19200/38400/57600/115200)');
+        Exit;
+      end;
+      hasBaud := True;
+      Inc(p, 2);
+    end
+    else if (LowerCase(parts[p]) = 'mode') and (p + 1 <= High(parts)) then
+    begin
+      if LowerCase(parts[p+1]) = 'fossil' then mode := nmFossil
+      else if LowerCase(parts[p+1]) = 'uart' then mode := nmUart
+      else begin PushErr('invalid mode: ' + parts[p+1] + ' (valid: fossil/uart)'); Exit; end;
+      hasMode := True;
+      Inc(p, 2);
+    end
+    else
+    begin
+      PushErr('unexpected token: ' + parts[p]);
+      Exit;
+    end;
   end;
 
-  { valid — add or update the node }
+  { store }
   p := FindNode(idx);
   if p < 0 then
   begin
@@ -192,8 +216,10 @@ begin
     p := High(FNodes);
   end;
   FNodes[p].NodeIndex := idx;
-  FNodes[p].Host := host;
-  FNodes[p].Port := Word(prt);
+  FNodes[p].ComPort := com;
+  FNodes[p].Baud := baud;
+  FNodes[p].Mode := mode;
+  FNodes[p].Enabled := True;
   Result := True;
 end;
 
@@ -219,17 +245,15 @@ begin
 end;
 
 function TNMConfig.GetNode(AIndex: Integer; out ACfg: TNodeConfig): Boolean;
-var p: Integer;
+var pp: Integer;
 begin
-  p := FindNode(AIndex);
-  Result := p >= 0;
-  if Result then ACfg := FNodes[p];
+  pp := FindNode(AIndex);
+  Result := pp >= 0;
+  if Result then ACfg := FNodes[pp];
 end;
 
 function TNMConfig.NodeCount: Integer;
-begin
-  Result := Length(FNodes);
-end;
+begin Result := Length(FNodes); end;
 
 function TNMConfig.NodeByPosition(APos: Integer; out ACfg: TNodeConfig): Boolean;
 begin
@@ -238,21 +262,15 @@ begin
 end;
 
 function TNMConfig.ErrorCount: Integer;
-begin
-  Result := Length(FErrors);
-end;
+begin Result := Length(FErrors); end;
 
 function TNMConfig.ErrorText(APos: Integer): string;
 begin
-  if (APos >= 0) and (APos <= High(FErrors)) then
-    Result := FErrors[APos]
-  else
-    Result := '';
+  if (APos >= 0) and (APos <= High(FErrors)) then Result := FErrors[APos]
+  else Result := '';
 end;
 
 function TNMConfig.IsValid: Boolean;
-begin
-  Result := Length(FErrors) = 0;
-end;
+begin Result := Length(FErrors) = 0; end;
 
 end.
