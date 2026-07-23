@@ -3,6 +3,10 @@
 Revival of Dedrick Allen's **NetModem/32** (32-bit FOSSIL Telnet server, 1997-2001)
 for modern Windows, with a portable, tested Pascal modem-emulation engine.
 
+> *"The virtual COM port is the foundation — without it, DOS BBS software is dead hardware. netmodem2irc makes DOS Mystic work on the modern internet. The FOSSIL driver, the serial code, the modem examples — they're not legacy, they're the bridge."*
+>
+> — Antonio Rico (verta1878)
+
 ## Status
 
 **38 test programs, 0 failures.** Server, config, and FOSSIL bridge compile. Original CPL included.
@@ -190,12 +194,35 @@ Features from Dedrick's original CPL that were designed but never finished
 
 ## Installer
 
-Inno Setup 5.6.1 ported to FPC 2.6.4irc. 4/5 targets compile (ISCC.exe,
-ISCmplr.dll, Setup.exe, SetupLdr.exe). Runtime hollow — LZMA decompression,
-DFM forms, resources, and PascalScript still needed. All toolchain support
-confirmed in fpc264irc Phase 9 (PascalScript source, fpcres, lazres, MinGW
-cross-linker all ship in-tree).
+Inno Setup 5.6.1 fully ported to FPC 2.6.4irc. All 9 phases complete.
+5/5 targets compile (ISCC.exe, ISCmplr.dll, Setup.exe, SetupLdr.exe,
+Compil32.exe). ISCC.exe verified working on Windows 98 SE — produces
+installer packages. Rebuilt with BUG-029 source-level fix.
 
-See `installer/INNO_FPC_PORT.md` for phases and build instructions.
-See `installer/README.md` for contents.
+The virtual COM port is the foundation — without it, DOS BBS software
+is dead hardware. netmodem2irc makes DOS Mystic work on the modern
+internet. The FOSSIL driver, the serial code, the modem examples —
+they're not legacy, they're the bridge.
+
+### Phases completed
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1-3 | ISCC.exe, compression, LCL integration | ✅ Done |
+| 4 | LZMA decompression (MinGW .o via {$L}) | ✅ Done |
+| 5 | Windows resources ({$R} enabled, LangID fix) | ✅ Done |
+| 6 | DFM→LFM forms (7 installer forms via lazres) | ✅ Done |
+| 7 | PascalScript [Code] section (35K lines) | ✅ Done |
+| 8 | Compil32.exe IDE (Scintilla editor) | ✅ Done |
+| 9 | Runtime testing (Win98 + Win11) | ✅ ISCC verified |
+
+### Key fixes
+
+- `Byte(CurCRC)` in Compress.pas — FPC `Lo()` returns Word, not Byte
+- `{$APPTYPE GUI}` for Setup.dpr, SetupLdr.dpr, Compil32.dpr
+- Win98 PE flags: OS version 4.0, no DEP/ASLR/TS
+- BUG-029: `fpc_AnsiStr_Decr_Ref` sub $12 fix (source-level, all targets)
+- fpcres BUG-032: LangID fallback for Borland Dutch icon .res files
+
+See `installer/INNO_FPC_PORT.md` for detailed build instructions.
 

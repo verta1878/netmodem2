@@ -8,3 +8,6 @@ Compression=zip
 DEPCompatible=no
 ASLRCompatible=no
 TerminalServicesAware=no
+
+[Files]
+Source: "Default.isl"; DestDir: "{app}"

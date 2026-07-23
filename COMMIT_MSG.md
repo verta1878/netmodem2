@@ -1,19 +1,16 @@
-20260722: BUG-029 audit — only i386-win32 affected, other targets clean
+20260722: Inno Setup rebuilt with BUG-029 fix — source-level system.o
 
-Full audit of fpc_ansistr_setlength across all four targets:
+All 5 Inno targets recompiled against fpc264irc with BUG-029 fix.
+fpc_AnsiStr_Decr_Ref now uses sub eax,12 (source-level fix in codepage
+backport, rebuilt system.ppu on all 6 targets). No more binary patches.
 
-  i386-win32:   BUG at 0x1A92C — patched (08 → 0C) ✅
-  i386-linux:   ALL sub eax,12 — not buggy ✅
-  i386-freebsd: ALL sub eax,12 — not buggy ✅
-  i386-go32v2:  ALL sub eax,12 — not buggy ✅
+Audit confirmed:
+  AnsiStr functions: all use sub eax,12 (12-byte TAnsiRec header) ✅
+  UnicodeStr_Assign: sub eax,8 (correct, 8-byte header) ✅
+  DynArray_Clear: sub eax,8 (correct, 8-byte header) ✅
 
-The author's offsets for other targets were false positives:
-  0x1037C (linux)    → lands in fpc_dynarray_copy, not setlength
-  0xFAE8  (freebsd)  → lands in fpc_dynarray_copy, not setlength
-  0xEE88  (go32v2)   → lands in fpc_dynarray_copy, not setlength
+Setup.exe should no longer AV on Win98/Win11 — the heap corruption
+that caused the Access Violation during message string processing
+is eliminated at the source.
 
-If those offsets were patched, they should be REVERTED — they're
-legitimate sub eax,8 instructions in dynarray code, not string code.
-
-Binaries compiled against patched i386-win32 system.o.
-Win98 PE headers, GUI subsystem, DEP/ASLR/TS off.
+Test on Windows: run ISCC.exe test.iss, then run test-setup.exe.
